@@ -13,13 +13,12 @@ interface MapDisplayProps {
 
 const CLICKABLE_ELEMENTS = ['path', 'g', 'rect', 'circle', 'polygon', 'ellipse'];
 
-// Tooltip sub-component
-const Tooltip: React.FC<{
+// Tooltip sub-component, now using forwardRef to get its DOM element for measurements
+const Tooltip = React.forwardRef<HTMLDivElement, {
     content: RegionData;
     settings: GlobalTooltipSettings;
-    position: { x: number; y: number };
     onClose?: () => void;
-}> = ({ content, settings, position, onClose }) => {
+}>(({ content, settings, onClose }, ref) => {
     const titleStyle = {
         fontSize: `${settings.tooltipTitleFontSize}px`,
         color: settings.tooltipTextColor,
@@ -29,19 +28,18 @@ const Tooltip: React.FC<{
         color: settings.tooltipTextColor,
     };
     const containerStyle = {
-        top: `${position.y}px`,
-        left: `${position.x}px`,
         backgroundColor: settings.tooltipBackgroundColor,
     };
 
     return (
         <div 
-            className="absolute p-3 rounded-md shadow-lg pointer-events-none z-30 max-w-xs transition-opacity"
+            ref={ref}
+            className="absolute p-3 rounded-md shadow-lg z-30 max-w-xs transition-all duration-200 ease-in-out opacity-0 pointer-events-none"
             style={containerStyle}
         >
              {settings.tooltipTrigger === 'click' && onClose && (
                 <button 
-                    onClick={onClose} 
+                    onClick={(e) => { e.stopPropagation(); onClose(); }}
                     className="absolute top-1 right-1 pointer-events-auto"
                     aria-label="Close tooltip"
                     style={{ color: settings.tooltipTextColor }}
@@ -56,17 +54,22 @@ const Tooltip: React.FC<{
             {content.description && <p className="m-0 mt-1" style={descriptionStyle}>{content.description}</p>}
         </div>
     );
-};
+});
+Tooltip.displayName = 'Tooltip';
 
 
 const MapDisplay: React.FC<MapDisplayProps> = ({ svgContent, onRegionSelect, selectedRegionId, customizationData, idChangeOp, globalSettings }) => {
   const svgContainerRef = useRef<HTMLDivElement>(null);
-  const [activeTooltip, setActiveTooltip] = useState<{ id: string; position: { x: number, y: number } } | null>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const [activeTooltip, setActiveTooltip] = useState<{ 
+      id: string;
+      event?: { clientX: number, clientY: number } 
+  } | null>(null);
   
   useLayoutEffect(() => {
     const container = svgContainerRef.current;
     if (idChangeOp && container) {
-        const escapedOldId = idChangeOp.oldId.replace(/([!"#$%&'()*+,./:;<=>?@[\]^\\`{|}~])/g, '\\\\$1');
+        const escapedOldId = idChangeOp.oldId.replace(/([!"#$%&'()*+,./:;<=>?@[\\\]^`{|}~])/g, '\\$1');
         try {
             const element = container.querySelector(`#${escapedOldId}`);
             if (element) {
@@ -103,19 +106,18 @@ const MapDisplay: React.FC<MapDisplayProps> = ({ svgContent, onRegionSelect, sel
     
     const handleMouseMove = (e: MouseEvent) => {
         const target = e.currentTarget as SVGElement;
-        if(globalSettings.tooltipTrigger !== 'click') {
+        if(globalSettings.tooltipTrigger === 'hover') {
            const data = customizationData[target.id];
            if (data?.title || data?.description || data?.tooltipImageSrc) {
-               setActiveTooltip({ id: target.id, position: { x: e.clientX + 15, y: e.clientY + 15 }});
+               setActiveTooltip({ id: target.id, event: { clientX: e.clientX, clientY: e.clientY }});
            }
         }
     };
     
     const handleMouseLeave = () => {
-        setActiveTooltip(prev => {
-            if (!prev) return null;
-            return globalSettings.tooltipTrigger === 'click' ? prev : null;
-        });
+        if(globalSettings.tooltipTrigger === 'hover') {
+            setActiveTooltip(null);
+        }
     };
 
     elements.forEach(el => {
@@ -151,40 +153,100 @@ const MapDisplay: React.FC<MapDisplayProps> = ({ svgContent, onRegionSelect, sel
   }, [svgContent, customizationData, onRegionSelect, globalSettings.tooltipTrigger]);
 
 
+  // This effect translates selectedRegionId into an activeTooltip when in 'click' mode
   useEffect(() => {
-    // Manage 'click' tooltips based on selectedRegionId
-    if (selectedRegionId) {
-        if (globalSettings.tooltipTrigger === 'click') {
-            const data = customizationData[selectedRegionId];
-            if (!data || (!data.title && !data.description && !data.tooltipImageSrc)) {
-                onRegionSelect(null); // Deselect if no content to show
-                return;
-            };
+    if (globalSettings.tooltipTrigger !== 'click') {
+        if (activeTooltip && !activeTooltip.event) { // Clear lingering click tooltips if mode changes
+            setActiveTooltip(null);
+        }
+        return;
+    }
 
-            const containerRect = svgContainerRef.current?.getBoundingClientRect();
-            const element = svgContainerRef.current?.querySelector(`#${selectedRegionId.replace(/([!"#$%&'()*+,./:;<=>?@[\]^\\`{|}~])/g, '\\\\$1')}`);
-            if(element && containerRect) {
-                const bbox = (element as SVGGraphicsElement).getBBox();
-                const svg = svgContainerRef.current?.querySelector('svg');
-                const svgRect = svg?.getBoundingClientRect();
-                if(svgRect) {
-                    const scaleX = svgRect.width / svg.viewBox.baseVal.width;
-                    const scaleY = svgRect.height / svg.viewBox.baseVal.height;
-                    const x = svgRect.left - containerRect.left + (bbox.x + bbox.width / 2) * scaleX;
-                    const y = svgRect.top - containerRect.top + (bbox.y + bbox.height / 2) * scaleY;
-                    setActiveTooltip({ id: selectedRegionId, position: {x, y}});
-                }
-            }
+    if (selectedRegionId) {
+        const data = customizationData[selectedRegionId];
+        if (data && (data.title || data.description || data.tooltipImageSrc)) {
+            setActiveTooltip({ id: selectedRegionId });
         } else {
-             setActiveTooltip(prev => prev?.id === selectedRegionId ? null : prev);
+            setActiveTooltip(null);
         }
     } else {
-        setActiveTooltip(prev => {
-            if (!prev) return null;
-            return globalSettings.tooltipTrigger === 'click' ? null : prev;
-        });
+        setActiveTooltip(null);
     }
-  }, [selectedRegionId, customizationData, globalSettings.tooltipTrigger, onRegionSelect]);
+  }, [selectedRegionId, globalSettings.tooltipTrigger, customizationData]);
+
+
+  // This effect handles positioning the tooltip to ensure it's always visible.
+  useLayoutEffect(() => {
+    const tooltipEl = tooltipRef.current;
+    const containerEl = svgContainerRef.current;
+
+    if (!activeTooltip || !tooltipEl || !containerEl) {
+        if (tooltipEl) tooltipEl.style.opacity = '0';
+        return;
+    }
+
+    const tooltipRect = tooltipEl.getBoundingClientRect();
+    const containerRect = containerEl.getBoundingClientRect();
+    
+    let top = 0;
+    let left = 0;
+
+    if (globalSettings.tooltipTrigger === 'hover' && activeTooltip.event) {
+        const { clientX, clientY } = activeTooltip.event;
+        const offsetX = 15;
+
+        left = clientX + offsetX;
+        if (left + tooltipRect.width > window.innerWidth) {
+            left = clientX - tooltipRect.width - offsetX;
+        }
+
+        top = clientY + offsetX;
+        if (top + tooltipRect.height > window.innerHeight) {
+            top = clientY - tooltipRect.height - offsetX;
+        }
+        
+        left -= containerRect.left;
+        top -= containerRect.top;
+
+    } else if (globalSettings.tooltipTrigger === 'click') {
+        const escapedId = activeTooltip.id.replace(/([!"#$%&'()*+,./:;<=>?@[\\\]^`{|}~])/g, '\\$1');
+        const element = containerEl.querySelector(`#${escapedId}`);
+        const svg = containerEl.querySelector('svg');
+
+        if (element && svg) {
+            const bbox = (element as SVGGraphicsElement).getBBox();
+            const svgRect = svg.getBoundingClientRect();
+            
+            if(svg.viewBox.baseVal.width > 0) {
+                const scaleX = svgRect.width / svg.viewBox.baseVal.width;
+                const scaleY = svgRect.height / svg.viewBox.baseVal.height;
+                
+                const elementCenterX = (svgRect.left - containerRect.left) + (bbox.x + bbox.width / 2) * scaleX;
+                const elementTopY = (svgRect.top - containerRect.top) + bbox.y * scaleY;
+                const elementBottomY = (svgRect.top - containerRect.top) + (bbox.y + bbox.height) * scaleY;
+                
+                const offset = 10;
+
+                top = elementTopY - tooltipRect.height - offset;
+                if (top < 0) {
+                    top = elementBottomY + offset;
+                }
+
+                left = elementCenterX - tooltipRect.width / 2;
+                if (left < 0) left = offset;
+                if (left + tooltipRect.width > containerRect.width) {
+                    left = containerRect.width - tooltipRect.width - offset;
+                }
+            }
+        }
+    }
+    
+    tooltipEl.style.left = `${left}px`;
+    tooltipEl.style.top = `${top}px`;
+    tooltipEl.style.opacity = '1';
+
+  }, [activeTooltip, globalSettings.tooltipTrigger, customizationData]);
+
 
   useEffect(() => {
     const container = svgContainerRef.current;
@@ -233,9 +295,9 @@ const MapDisplay: React.FC<MapDisplayProps> = ({ svgContent, onRegionSelect, sel
     <div ref={svgContainerRef} className="w-full h-full max-h-[80vh] aspect-auto relative">
         {activeTooltip && tooltipData && (
             <Tooltip 
+                ref={tooltipRef}
                 content={tooltipData} 
                 settings={globalSettings}
-                position={activeTooltip.position} 
                 onClose={globalSettings.tooltipTrigger === 'click' ? () => onRegionSelect(null) : undefined}
             />
         )}

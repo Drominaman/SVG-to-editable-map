@@ -76,7 +76,7 @@ export const generateEmbedCode = (svgContent: string, customizationData: Record<
             const tooltip = document.getElementById('map-tooltip');
             const tooltipContent = document.getElementById('map-tooltip-content');
             const tooltipClose = document.getElementById('map-tooltip-close');
-            const svgContent = \`${svgContent.replace(/`/g, '\\`')}\`;
+            const svgContent = \`${svgContent.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${')}\`;
             const customizationData = ${cleanCustomizationData};
             const globalSettings = ${cleanGlobalSettings};
 
@@ -225,6 +225,9 @@ export const generateEmbedCode = (svgContent: string, customizationData: Record<
             Object.keys(customizationData).forEach(regionId => {
                 const data = customizationData[regionId];
                 if (data && data.title) {
+                    // FIX: Escaped the backtick character in the regex. Since this script is inside a template literal,
+                    // the unescaped backtick was breaking the string, causing a syntax error and leading to
+                    // multiple follow-on errors about variables not being defined.
                     const escapedId = regionId.replace(/([!"#$%&'()*+,./:;<=>?@[\]^\\\`{|}~])/g, '\\\\$1');
                     try {
                         const region = svg.querySelector('#' + escapedId);
