@@ -1,0 +1,5 @@
+{
+  "name": "Clickable SVG Map Maker",
+  "description": "An application that allows users to upload an SVG map, customize its regions with interactive data (titles, descriptions, links), and export it as a self-contained, embeddable HTML file.",
+  "requestFramePermissions": []
+}
