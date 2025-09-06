@@ -7,7 +7,7 @@ import CustomizationPanel from './components/CustomizationPanel';
 import GlobalSettingsModal from './components/GlobalSettingsModal';
 import ExportModal from './components/ExportModal';
 import { generateEmbedCode } from './services/exportService';
-import { HeaderIcon, CodeIcon, UploadIcon, SettingsIcon, MousePointerIcon } from './components/icons';
+import { HeaderIcon, CodeIcon, UploadIcon, SettingsIcon, MousePointerIcon, EyeIcon, PencilIcon } from './components/icons';
 
 // Helper to calculate a shade of a color
 const adjustColorShade = (hex: string, percent: number): string => {
@@ -35,6 +35,7 @@ const App: React.FC = () => {
   const [isGlobalSettingsModalOpen, setIsGlobalSettingsModalOpen] = useState(false);
   const [embedCode, setEmbedCode] = useState('');
   const [idChangeOp, setIdChangeOp] = useState<IdChangeOp | null>(null);
+  const [mode, setMode] = useState<'edit' | 'preview'>('edit');
   const [globalTooltipSettings, setGlobalTooltipSettings] = useState<GlobalTooltipSettings>({
     tooltipTrigger: 'hover',
     tooltipBackgroundColor: '#111827',
@@ -43,6 +44,7 @@ const App: React.FC = () => {
     tooltipDescriptionFontSize: 14,
     defaultRegionColor: '#FBBF24',
     defaultRegionHoverColor: adjustColorShade('#FBBF24', -10), // Darker shade
+    showRegionLabels: true,
   });
 
   const handleGlobalSettingsChange = (settings: GlobalTooltipSettings) => {
@@ -56,11 +58,13 @@ const App: React.FC = () => {
     setSvgContent(content);
     setCustomizationData({});
     setSelectedRegionId(null);
+    setMode('edit');
   };
 
-  const handleRegionSelect = (id: string | null) => {
+  const handleRegionSelect = useCallback((id: string | null) => {
+    if (mode === 'preview' && id !== null) return;
     setSelectedRegionId(id);
-  };
+  }, [mode]);
 
   const handleDataChange = useCallback((id: string, data: RegionData) => {
     setCustomizationData(prev => ({ ...prev, [id]: data }));
@@ -133,6 +137,14 @@ const App: React.FC = () => {
                       e.target.value = ''; // Reset file input
                   }} />
               </label>
+               <button
+                onClick={() => setMode(m => m === 'edit' ? 'preview' : 'edit')}
+                className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
+                title={mode === 'edit' ? 'Preview Map' : 'Return to Editor'}
+              >
+                {mode === 'edit' ? <EyeIcon /> : <PencilIcon />}
+                {mode === 'edit' ? 'Preview' : 'Edit Mode'}
+              </button>
               <button
                 onClick={() => setIsGlobalSettingsModalOpen(true)}
                 className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
@@ -168,23 +180,40 @@ const App: React.FC = () => {
                 customizationData={customizationData}
                 idChangeOp={idChangeOp}
                 globalSettings={globalTooltipSettings}
+                mode={mode}
               />
             </div>
             <aside className="w-full md:w-1/3 bg-gray-800 border-l border-gray-700 overflow-y-auto">
-              {selectedRegionId ? (
-                <CustomizationPanel
-                  key={selectedRegionId} // Re-mount component on selection change to reset state
-                  selectedRegionId={selectedRegionId}
-                  regionData={selectedData}
-                  onDataChange={handleDataChange}
-                  onIdChange={handleRegionIdChange}
-                  existingIds={Object.keys(customizationData)}
-                />
+              {mode === 'edit' ? (
+                selectedRegionId ? (
+                  <CustomizationPanel
+                    key={selectedRegionId} // Re-mount component on selection change to reset state
+                    selectedRegionId={selectedRegionId}
+                    regionData={selectedData}
+                    onDataChange={handleDataChange}
+                    onIdChange={handleRegionIdChange}
+                    existingIds={Object.keys(customizationData)}
+                  />
+                ) : (
+                   <div className="flex flex-col items-center justify-center h-full text-center text-gray-400 p-6">
+                      <MousePointerIcon className="mb-4 text-gray-500" />
+                      <h3 className="text-xl font-semibold text-gray-200">No region selected</h3>
+                      <p>Click on a region in the map to start customizing it.</p>
+                  </div>
+                )
               ) : (
-                 <div className="flex flex-col items-center justify-center h-full text-center text-gray-400 p-6">
-                    <MousePointerIcon className="mb-4 text-gray-500" />
-                    <h3 className="text-xl font-semibold text-gray-200">No region selected</h3>
-                    <p>Click on a region in the map to start customizing it.</p>
+                <div className="flex flex-col items-center justify-center h-full text-center text-gray-400 p-6">
+                  <EyeIcon className="mb-4 text-gray-500" width="64" height="64" />
+                  <h3 className="text-xl font-semibold text-gray-200">Preview Mode</h3>
+                  <p>Interact with the map as your users will see it.</p>
+                  <p className="mt-2 text-sm">Links and tooltips are active.</p>
+                  <button
+                    onClick={() => setMode('edit')}
+                    className="mt-6 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    <PencilIcon />
+                    Switch to Edit Mode
+                  </button>
                 </div>
               )}
             </aside>

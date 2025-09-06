@@ -76,7 +76,7 @@ export const generateEmbedCode = (svgContent: string, customizationData: Record<
             const tooltip = document.getElementById('map-tooltip');
             const tooltipContent = document.getElementById('map-tooltip-content');
             const tooltipClose = document.getElementById('map-tooltip-close');
-            const svgContent = \`${svgContent.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${')}\`;
+            const svgContent = \`${svgContent.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${').replace(/<\/script>/gi, '<\\/script>')}\`;
             const customizationData = ${cleanCustomizationData};
             const globalSettings = ${cleanGlobalSettings};
 

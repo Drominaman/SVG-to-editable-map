@@ -14,6 +14,9 @@ export interface GlobalTooltipSettings {
   // Global region colors
   defaultRegionColor: string;
   defaultRegionHoverColor: string;
+
+  // Editor-specific settings
+  showRegionLabels: boolean;
 }
 
 export interface RegionData {

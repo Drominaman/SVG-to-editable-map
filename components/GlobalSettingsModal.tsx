@@ -1,7 +1,7 @@
 
 import React from 'react';
 import type { GlobalTooltipSettings } from '../types';
-import { CloseIcon, ColorSwatchIcon, EyeIcon } from './icons';
+import { CloseIcon, ColorSwatchIcon, TextIcon } from './icons';
 
 interface GlobalSettingsModalProps {
   settings: GlobalTooltipSettings;
@@ -31,7 +31,7 @@ const InputField: React.FC<{ label: string; value: string | number; onChange: (e
 
 const GlobalSettingsModal: React.FC<GlobalSettingsModalProps> = ({ settings, onSettingsChange, onClose }) => {
     
-  const handleChange = (field: keyof GlobalTooltipSettings, value: string | number) => {
+  const handleChange = (field: keyof GlobalTooltipSettings, value: string | number | boolean) => {
     const newSettings = { ...settings, [field]: value };
     onSettingsChange(newSettings);
   };
@@ -50,8 +50,23 @@ const GlobalSettingsModal: React.FC<GlobalSettingsModalProps> = ({ settings, onS
           <div className="space-y-6">
             <details open className="bg-gray-900/50 rounded-lg p-4 border border-gray-700">
                 <summary className="font-semibold text-lg cursor-pointer">Map Style</summary>
-                <div className="mt-4">
+                <div className="mt-4 space-y-4">
                     <InputField label="Region Color" type="color" value={settings.defaultRegionColor} onChange={(e) => handleChange('defaultRegionColor', e.target.value)} icon={<ColorSwatchIcon />} />
+                     <div className="flex items-center justify-between pt-2">
+                        <label htmlFor="show-labels-toggle" className="text-sm font-medium text-gray-300 flex items-center gap-2">
+                            <TextIcon />
+                            Show Region Labels
+                        </label>
+                        <button
+                            id="show-labels-toggle"
+                            role="switch"
+                            aria-checked={settings.showRegionLabels}
+                            onClick={() => handleChange('showRegionLabels', !settings.showRegionLabels)}
+                            className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500 ${settings.showRegionLabels ? 'bg-indigo-600' : 'bg-gray-600'}`}
+                        >
+                            <span className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform ${settings.showRegionLabels ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                    </div>
                 </div>
             </details>
             <details open className="bg-gray-900/50 rounded-lg p-4 border border-gray-700">

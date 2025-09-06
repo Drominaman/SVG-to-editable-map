@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useLayoutEffect, useState } from 'react';
 import type { RegionData, GlobalTooltipSettings, IdChangeOp } from '../types';
 import { CloseIcon } from './icons';
@@ -9,6 +10,7 @@ interface MapDisplayProps {
   customizationData: Record<string, RegionData>;
   idChangeOp: IdChangeOp | null;
   globalSettings: GlobalTooltipSettings;
+  mode: 'edit' | 'preview';
 }
 
 const CLICKABLE_ELEMENTS = ['path', 'g', 'rect', 'circle', 'polygon', 'ellipse'];
@@ -58,7 +60,7 @@ const Tooltip = React.forwardRef<HTMLDivElement, {
 Tooltip.displayName = 'Tooltip';
 
 
-const MapDisplay: React.FC<MapDisplayProps> = ({ svgContent, onRegionSelect, selectedRegionId, customizationData, idChangeOp, globalSettings }) => {
+const MapDisplay: React.FC<MapDisplayProps> = ({ svgContent, onRegionSelect, selectedRegionId, customizationData, idChangeOp, globalSettings, mode }) => {
   const svgContainerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [activeTooltip, setActiveTooltip] = useState<{ 
@@ -81,7 +83,7 @@ const MapDisplay: React.FC<MapDisplayProps> = ({ svgContent, onRegionSelect, sel
     }
   }, [idChangeOp]);
 
-
+  // Effect to setup the SVG DOM, runs only when a new SVG is loaded.
   useEffect(() => {
     const container = svgContainerRef.current;
     if (!container) return;
@@ -98,10 +100,51 @@ const MapDisplay: React.FC<MapDisplayProps> = ({ svgContent, onRegionSelect, sel
     let idCounter = 0;
     const elements = svg.querySelectorAll(CLICKABLE_ELEMENTS.join(', '));
 
+    elements.forEach(el => {
+      const element = el as SVGElement;
+      if (!element.id) {
+        element.id = `map-region-${idCounter++}`;
+      }
+    });
+  }, [svgContent]);
+
+  // Effect to manage all event listeners. Re-attaches when interaction logic changes.
+  useEffect(() => {
+    const container = svgContainerRef.current;
+    if (!container) return;
+    const svg = container.querySelector('svg');
+    if (!svg) return;
+
+    // Prevent default behavior of any links within the SVG to stop navigation in the editor
+    const links = svg.querySelectorAll('a');
+    const preventNavigation = (e: Event) => e.preventDefault();
+    links.forEach(link => {
+      link.addEventListener('click', preventNavigation);
+    });
+
+    const elements = svg.querySelectorAll(CLICKABLE_ELEMENTS.join(', '));
+
     const handleClick = (e: Event) => {
         e.stopPropagation();
         const target = e.currentTarget as SVGElement;
-        onRegionSelect(target.id);
+        
+        if (mode === 'edit') {
+            onRegionSelect(target.id);
+        } else { // Preview Mode
+            const data = customizationData[target.id];
+            
+            if (globalSettings.tooltipTrigger === 'click') {
+                if (data?.title || data?.description || data?.tooltipImageSrc) {
+                     setActiveTooltip(prev => (prev?.id === target.id && !prev.event) ? null : { id: target.id });
+                } else {
+                    setActiveTooltip(null);
+                }
+            }
+
+            if (data?.link) {
+                window.open(data.link, '_blank');
+            }
+        }
     };
     
     const handleMouseMove = (e: MouseEvent) => {
@@ -121,22 +164,18 @@ const MapDisplay: React.FC<MapDisplayProps> = ({ svgContent, onRegionSelect, sel
     };
 
     elements.forEach(el => {
-      const element = el as SVGElement;
-      if (!element.id) {
-        element.id = `map-region-${idCounter++}`;
-      }
-      
-      element.removeEventListener('click', handleClick);
-      element.addEventListener('click', handleClick);
-      element.removeEventListener('mousemove', handleMouseMove as EventListener);
-      element.addEventListener('mousemove', handleMouseMove as EventListener);
-      element.removeEventListener('mouseleave', handleMouseLeave);
-      element.addEventListener('mouseleave', handleMouseLeave);
+      el.addEventListener('click', handleClick);
+      el.addEventListener('mousemove', handleMouseMove as EventListener);
+      el.addEventListener('mouseleave', handleMouseLeave);
     });
 
     const handleContainerClick = (e: MouseEvent) => {
         if (e.target === container || e.target === svg) {
-            onRegionSelect(null);
+            if (mode === 'edit') {
+                onRegionSelect(null);
+            } else { // In preview, clicking outside closes click tooltips
+                setActiveTooltip(null);
+            }
         }
     }
 
@@ -148,14 +187,17 @@ const MapDisplay: React.FC<MapDisplayProps> = ({ svgContent, onRegionSelect, sel
           el.removeEventListener('mousemove', handleMouseMove as EventListener);
           el.removeEventListener('mouseleave', handleMouseLeave);
       });
+      links.forEach(link => {
+        link.removeEventListener('click', preventNavigation);
+      });
       container.removeEventListener('click', handleContainerClick);
     };
-  }, [svgContent, customizationData, onRegionSelect, globalSettings.tooltipTrigger]);
+  }, [svgContent, customizationData, onRegionSelect, globalSettings.tooltipTrigger, mode]);
 
 
   // This effect translates selectedRegionId into an activeTooltip when in 'click' mode
   useEffect(() => {
-    if (globalSettings.tooltipTrigger !== 'click') {
+    if (mode !== 'edit' || globalSettings.tooltipTrigger !== 'click') {
         if (activeTooltip && !activeTooltip.event) { // Clear lingering click tooltips if mode changes
             setActiveTooltip(null);
         }
@@ -172,7 +214,7 @@ const MapDisplay: React.FC<MapDisplayProps> = ({ svgContent, onRegionSelect, sel
     } else {
         setActiveTooltip(null);
     }
-  }, [selectedRegionId, globalSettings.tooltipTrigger, customizationData]);
+  }, [selectedRegionId, globalSettings.tooltipTrigger, customizationData, mode]);
 
 
   // This effect handles positioning the tooltip to ensure it's always visible.
@@ -261,7 +303,7 @@ const MapDisplay: React.FC<MapDisplayProps> = ({ svgContent, onRegionSelect, sel
           element.originalStroke = element.style.stroke || element.getAttribute('stroke') || 'none';
         }
 
-        const isSelected = id === selectedRegionId;
+        const isSelected = mode === 'edit' && id === selectedRegionId;
 
         element.style.fill = globalSettings.defaultRegionColor;
 
@@ -279,17 +321,79 @@ const MapDisplay: React.FC<MapDisplayProps> = ({ svgContent, onRegionSelect, sel
         if (isSelected) {
             element.style.stroke = '#3b82f6';
             element.style.strokeWidth = '2px';
-            element.style.cursor = 'pointer';
         } else {
             element.style.stroke = element.originalStroke;
             element.style.strokeWidth = '1';
-            element.style.cursor = 'pointer';
         }
+        element.style.cursor = 'pointer';
     });
 
-  }, [selectedRegionId, svgContent, globalSettings]);
+  }, [selectedRegionId, svgContent, globalSettings, mode]);
+
+  // Effect to display region labels inside the editor
+  useEffect(() => {
+    const svg = svgContainerRef.current?.querySelector('svg');
+    if (!svg) return;
+
+    // Clear existing labels first to prevent duplicates on re-render
+    svg.querySelectorAll('.editor-region-label').forEach(el => el.remove());
+
+    if (mode !== 'edit' || !globalSettings.showRegionLabels) {
+      return;
+    }
+
+    const elements = svg.querySelectorAll(CLICKABLE_ELEMENTS.join(', '));
+    elements.forEach(el => {
+      const element = el as SVGElement;
+      const id = element.id;
+      if (!id) return;
+
+      const data = customizationData[id];
+      const labelText = data?.title || id;
+
+      try {
+        const bbox = (element as SVGGraphicsElement).getBBox();
+        
+        // Don't add labels to empty/zero-size elements
+        if (bbox.width > 0 || bbox.height > 0) {
+          const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          text.setAttribute('x', String(bbox.x + bbox.width / 2));
+          text.setAttribute('y', String(bbox.y + bbox.height / 2));
+          text.setAttribute('class', 'editor-region-label');
+          text.textContent = labelText;
+
+          // Apply styles for visibility. These are robust for most SVG scales.
+          Object.assign(text.style, {
+            textAnchor: 'middle',
+            dominantBaseline: 'central',
+            fill: '#FFFFFF',
+            fontSize: '10px',
+            stroke: 'rgba(0,0,0,0.8)',
+            strokeWidth: '0.5px',
+            paintOrder: 'stroke',
+            pointerEvents: 'none',
+            fontFamily: 'sans-serif',
+          });
+          
+          svg.appendChild(text);
+        }
+      } catch (e) {
+        // Getting BBox can fail for non-rendered elements, so we ignore these errors.
+      }
+    });
+  }, [svgContent, customizationData, globalSettings.showRegionLabels, mode]);
+
 
   const tooltipData = activeTooltip ? customizationData[activeTooltip.id] : null;
+  
+  const handleTooltipClose = () => {
+      if (mode === 'edit') {
+        onRegionSelect(null);
+      } else {
+        setActiveTooltip(null);
+      }
+  };
+
 
   return (
     <div ref={svgContainerRef} className="w-full h-full max-h-[80vh] aspect-auto relative">
@@ -298,7 +402,7 @@ const MapDisplay: React.FC<MapDisplayProps> = ({ svgContent, onRegionSelect, sel
                 ref={tooltipRef}
                 content={tooltipData} 
                 settings={globalSettings}
-                onClose={globalSettings.tooltipTrigger === 'click' ? () => onRegionSelect(null) : undefined}
+                onClose={globalSettings.tooltipTrigger === 'click' ? handleTooltipClose : undefined}
             />
         )}
     </div>
